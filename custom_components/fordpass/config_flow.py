@@ -5,6 +5,7 @@ import random
 import re
 import string
 from base64 import urlsafe_b64encode
+from urllib.parse import urlencode
 
 import voluptuous as vol
 from homeassistant import config_entries, core, exceptions
@@ -97,12 +98,14 @@ async def validate_token(hass: core.HomeAssistant, data):
         data["code_verifier"],
     )
 
-    if results:
-        _LOGGER.debug("Token valid, fetching vehicles")
-        vehicles = await vehicle.vehicles()
-        _LOGGER.debug("Vehicles: %s", vehicles)
-        return vehicles
-    return None
+    if not results:
+        _LOGGER.debug("Token validation failed for user: %s", data.get("username"))
+        raise InvalidToken
+
+    _LOGGER.debug("Token valid, fetching vehicles")
+    vehicles = await vehicle.vehicles()
+    _LOGGER.debug("Vehicles: %s", vehicles)
+    return vehicles
 
 
 async def validate_existing_account(hass: core.HomeAssistant, username, region):
@@ -274,17 +277,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.debug("Token input: %s", user_input)
                     info = await validate_token(self.hass, user_input)
                     self.login_input = user_input
-                    if info is None:
-                        self.vehicles = None
-                        _LOGGER.debug("No vehicles found")
-                    else:
-                        self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
+                    self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
                     if self.vehicles is None:
                         return await self.async_step_vin()
                     return await self.async_step_vehicle()
                 else:
                     errors["base"] = "invalid_token"
 
+            except InvalidToken:
+                errors["base"] = "invalid_token"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
 
@@ -316,20 +317,23 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.login_input["code_verifier"] = code1
 
         region_data = REGIONS[region]
+        query_params = {
+            "redirect_uri": "fordapp://userauthorized",
+            "response_type": "code",
+            "max_age": "3600",
+            "code_challenge": code_verifier,
+            "code_challenge_method": "S256",
+            "scope": "09852200-05fd-41f6-8c21-d36d3497dc64 openid",
+            "client_id": "09852200-05fd-41f6-8c21-d36d3497dc64",
+            "ui_locales": region_data["locale"],
+            "language_code": region_data["locale"],
+            "country_code": region_data["locale_short"],
+            "ford_application_id": region_data["region"],
+        }
         url = (
             f"{region_data['locale_url']}/4566605f-43a7-400a-946e-89cc9fdb0bd7"
             f"/B2C_1A_SignInSignUp_{region_data['locale']}/oauth2/v2.0/authorize"
-            f"?redirect_uri=fordapp://userauthorized"
-            f"&response_type=code"
-            f"&max_age=3600"
-            f"&code_challenge={code_verifier}"
-            f"&code_challenge_method=S256"
-            f"&scope=%2009852200-05fd-41f6-8c21-d36d3497dc64%20openid"
-            f"&client_id=09852200-05fd-41f6-8c21-d36d3497dc64"
-            f"&ui_locales={region_data['locale']}"
-            f"&language_code={region_data['locale']}"
-            f"&country_code={region_data['locale_short']}"
-            f"&ford_application_id={region_data['region']}"
+            f"?{urlencode(query_params)}"
         )
         return url
 

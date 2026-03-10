@@ -8,6 +8,7 @@ import re
 import string
 import time
 from base64 import urlsafe_b64encode
+from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -74,8 +75,19 @@ class Vehicle:
 
     async def generate_tokens(self, urlstring, code_verifier):
         """Generate tokens from auth code."""
-        code_new = urlstring.replace("fordapp://userauthorized/?code=", "")
-        _LOGGER.debug("Code: %s, Country: %s", code_new, self.country_code)
+        # Extract just the 'code' query param if the input looks like a URL,
+        # so that any additional parameters (e.g. '&state=...') are not sent.
+        if "code=" in urlstring:
+            parsed = urlparse(urlstring)
+            params = parse_qs(parsed.query)
+            code_new = params.get("code", [""])[0]
+        else:
+            code_new = urlstring
+        _LOGGER.debug(
+            "Received auth code for country %s (length=%d)",
+            self.country_code,
+            len(code_new),
+        )
 
         data = {
             "client_id": "09852200-05fd-41f6-8c21-d36d3497dc64",
