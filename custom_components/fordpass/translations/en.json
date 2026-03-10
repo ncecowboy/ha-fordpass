@@ -1,0 +1,103 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Account is already configured",
+            "no_vehicles": "No unconfigured vehicles found on this account"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid Credentials",
+            "invalid_vin": "VIN not found for given account",
+            "invalid_mobile": "Mobile number as username must be specified if using South African Region",
+            "invalid_token": "Token is invalid, please check you copied the correct token from the Header Location, it should start with fordapp://",
+            "unknown": "Unexpected error"
+        },
+        "step": {
+            "user": {
+                "title": "FordPass Setup",
+                "description": "Choose how you want to set up FordPass",
+                "data": {
+                    "setup_type": "Setup Type"
+                }
+            },
+            "new_account": {
+                "title": "New FordPass Account",
+                "description": "Set up a new FordPass account",
+                "data": {
+                    "username": "FordPass Username (Email)",
+                    "region": "FordPass Region"
+                },
+                "data_description": {
+                    "username": "If using a mobile instead of email please enter your number (minus initial 0) also include + and the country code (e.g. +99123456789)"
+                }
+            },
+            "add_vehicle": {
+                "title": "Add Vehicle to Existing Account",
+                "description": "Add another vehicle to an existing FordPass account. This will use the existing authentication tokens.",
+                "data": {
+                    "account": "Select Account"
+                }
+            },
+            "token": {
+                "title": "Setup Token",
+                "description": "Please visit the URL shown below in your browser, sign in to your Ford account, then copy the full redirect URL (starting with 'fordapp://userauthorized/?code=') and paste it into the Token field below. For help see the [documentation](https://github.com/ncecowboy/ha-fordpass).",
+                "data": {
+                    "url": "Login URL (copy to browser)",
+                    "tokenstr": "Token (paste full fordapp:// URL here)"
+                }
+            },
+            "vehicle": {
+                "title": "Select vehicle to add",
+                "description": "Only vehicles not currently added will be shown",
+                "data": {
+                    "vin": "VIN"
+                }
+            },
+            "vin": {
+                "title": "Manual VIN Entry",
+                "description": "Please enter your VIN number manually as no vehicles could be found automatically.",
+                "data": {
+                    "vin": "VIN Number for vehicle"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "pressure_unit": "Unit of Pressure",
+                    "distance_unit": "Unit of Distance",
+                    "distance_conversion": "Disable distance conversion",
+                    "update_interval": "Interval to poll Fordpass API (Seconds)"
+                },
+                "description": "Configure FordPass options"
+            }
+        }
+    },
+    "services": {
+        "refresh_status": {
+            "name": "Refresh Vehicle Status",
+            "description": "Poll car for latest status (Takes up to 5 minutes to update once this function has been run!)",
+            "fields": {
+                "vin": {
+                    "name": "VIN",
+                    "description": "Enter a VIN number to only refresh the specified vehicle (Default refreshes all added vehicles)"
+                }
+            }
+        },
+        "clear_tokens": {
+            "name": "Clear Tokens",
+            "description": "Clear the token cache"
+        },
+        "reload": {
+            "name": "Reload",
+            "description": "Reload the FordPass Integration"
+        },
+        "poll_api": {
+            "name": "Poll API",
+            "description": "Manually poll API for data update (Warning: doing this too often could result in a ban)"
+        }
+    },
+    "title": "FordPass"
+}

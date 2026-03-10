@@ -1,0 +1,19 @@
+refresh_status:
+  name: Refresh Vehicle Status
+  description: "Poll car for latest status (Takes up to 5 minutes to update once this function has been run!)"
+  fields:
+    vin:
+      name: VIN
+      description: "Enter a VIN number to only refresh the specified vehicle (Default refreshes all added vehicles)"
+      example: "1C4GJ25342B521742"
+      selector:
+        text:
+clear_tokens:
+  name: Clear Tokens
+  description: "Clear the cached authentication tokens"
+reload:
+  name: Reload
+  description: "Reload the FordPass Integration"
+poll_api:
+  name: Poll API
+  description: "Manually poll API for data update (Warning: doing this too often could result in a ban)"
