@@ -1,0 +1,79 @@
+{
+  "title": "Fordpass",
+  "config": {
+    "step": {
+      "user": {
+        "title": "FordPass Setup",
+        "description": "Choose how you want to set up FordPass",
+        "data": {
+          "setup_type": "Setup Type"
+        }
+      },
+      "new_account": {
+        "title": "New FordPass Account",
+        "description": "Set up a new FordPass account",
+        "data": {
+          "username": "FordPass Username (Email)",
+          "region": "FordPass Region"
+        },
+        "data_description": {
+          "username": "If using a mobile instead of email please enter your number include + and the country code (+99123456789)"
+        }
+      },
+      "add_vehicle": {
+        "title": "Add Vehicle to Existing Account",
+        "description": "Add another vehicle to an existing FordPass account",
+        "data": {
+          "account": "Select Account"
+        }
+      },
+      "token": {
+        "title": "Sign In with Ford",
+        "description": "**[Click here to sign in with your Ford account]({login_url})**\n\nAfter signing in, your browser will attempt to open a `fordapp://` URL. If it shows an error or asks how to open the link, copy the full URL from the browser address bar (it starts with `fordapp://userauthorized/?code=`) and paste it into the field below.",
+        "data": {
+          "tokenstr": "Ford Redirect URL (starts with fordapp://)"
+        }
+      },
+      "vehicle": {
+        "title": "Select vehicle to add",
+        "description": "Select the vehicle to add",
+        "data": {
+          "vin": "VIN"
+        }
+      },
+      "vin": {
+        "title": "Enter VIN",
+        "description": "Enter the VIN of the vehicle to add",
+        "data": {
+          "vin": "VIN"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "invalid_vin": "[%key:common::config_flow::error::invalid_vin%]",
+      "invalid_mobile": "[%key:common::config_flow::error::invalid_mobile%]",
+      "invalid_token": "[%key:common::config_flow::error::invalid_token%]",
+      "already_configured": "This vehicle is already configured",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
+      "no_vehicles": "No unconfigured vehicles found on this account"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "pressure_unit": "Unit of Pressure",
+          "distance_unit": "Unit of Distance",
+          "distance_conversion": "Disable distance conversion",
+          "update_interval": "Interval to poll Fordpass API (Seconds)"
+        },
+        "description": "Configure FordPass options"
+      }
+    }
+  }
+}
