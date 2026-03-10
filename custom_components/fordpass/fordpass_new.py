@@ -97,12 +97,8 @@ class Vehicle:
             f"{self.ford_login_url}/4566605f-43a7-400a-946e-89cc9fdb0bd7/B2C_1A_SignInSignUp_{self.country_code}/oauth2/v2.0/token",
             headers=headers,
             data=data,
-            # ssl=False required for Ford login endpoint certificate compatibility
-            ssl=False,
         ) as response:
             _LOGGER.debug("Token generation status: %s", response.status)
-            text = await response.text()
-            _LOGGER.debug(text)
             if response.status == 200:
                 token_data = await response.json(content_type=None)
                 return await self.generate_fulltokens(token_data)
@@ -118,12 +114,8 @@ class Vehicle:
             f"{GUARD_URL}/token/v2/cat-with-b2c-access-token",
             json=data,
             headers=headers,
-            # ssl=False required for Ford API endpoint certificate compatibility
-            ssl=False,
         ) as response:
             _LOGGER.debug("Full token generation status: %s", response.status)
-            text = await response.text()
-            _LOGGER.debug(text)
             if response.status == 200:
                 final_tokens = await response.json(content_type=None)
                 final_tokens["expiry_date"] = time.time() + final_tokens["expires_in"]
@@ -259,7 +251,7 @@ class Vehicle:
                 self.expires_at = time.time() + result["expires_in"]
                 auto_token = await self.get_auto_token()
                 self.auto_token = auto_token["access_token"]
-                self.auto_expires_at = time.time() + result["expires_in"]
+                self.auto_expires_at = time.time() + auto_token["expires_in"]
 
                 result["expiry_date"] = time.time() + result["expires_in"]
                 result["auto_token"] = auto_token["access_token"]
@@ -320,22 +312,43 @@ class Vehicle:
             }
 
         if self.auto_token is None or self.auto_expires_at is None:
-            result = await self.refresh_token_func(data)
-            _LOGGER.debug("Refreshed token to get auto token")
-            if result:
-                await self.refresh_auto_token(result)
+            if self.refresh_token:
+                result = await self.refresh_token_func(data)
+                _LOGGER.debug("Refreshed token to get auto token")
+                if result:
+                    await self.refresh_auto_token(result)
+            else:
+                _LOGGER.warning(
+                    "No refresh token available; cannot obtain Autonomic token. "
+                    "Reauthentication will be required."
+                )
+                self.token = None
 
         if self.expires_at:
             if time.time() >= self.expires_at:
                 _LOGGER.debug("Token expired, requesting refresh")
-                await self.refresh_token_func(data)
+                if self.refresh_token:
+                    await self.refresh_token_func(data)
+                else:
+                    _LOGGER.warning(
+                        "Access token expired and no refresh token available; "
+                        "reauthentication will be required."
+                    )
+                    self.token = None
 
         if self.auto_expires_at:
             if time.time() >= self.auto_expires_at:
                 _LOGGER.debug("Autonomic token expired, refreshing")
-                result = await self.refresh_token_func(data)
-                if result:
-                    await self.refresh_auto_token(result)
+                if self.refresh_token:
+                    result = await self.refresh_token_func(data)
+                    if result:
+                        await self.refresh_auto_token(result)
+                else:
+                    _LOGGER.warning(
+                        "Autonomic token expired and no refresh token available; "
+                        "reauthentication will be required."
+                    )
+                    self.auto_token = None
 
         if self.token is None:
             _LOGGER.debug("No token found, authenticating")
@@ -358,7 +371,7 @@ class Vehicle:
 
     async def clear_token(self):
         """Clear tokens from HA config store."""
-        await self.token_store.async_save({})
+        await self.token_store.async_save(None)
 
     async def refresh_auto_token(self, result):
         """Refresh the Autonomic API token."""

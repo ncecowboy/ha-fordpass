@@ -37,6 +37,7 @@ from .fordpass_new import Vehicle
 CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Schema({})}, extra=vol.ALLOW_EXTRA)
 
 PLATFORMS = ["lock", "sensor", "switch", "device_tracker"]
+OPTIONS_LISTENER_KEY = "fordpass_options_listener"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,8 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER.debug("Region not found in config, using default")
         region = DEFAULT_REGION
 
-    # Create token store for this user in HA storage
-    token_store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{user}")
+    # Create token store for this user+region in HA storage
+    token_store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{user}_{region}")
 
     coordinator = FordPassDataUpdateCoordinator(
         hass, user, password, vin, region, update_interval, token_store
@@ -84,7 +85,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     hass.data[DOMAIN][entry.entry_id] = {
         COORDINATOR: coordinator,
-        "fordpass_options_listener": fordpass_options_listener,
+        OPTIONS_LISTENER_KEY: fordpass_options_listener,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -145,26 +146,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
         await asyncio.gather(*reload_tasks)
 
-    hass.services.async_register(
-        DOMAIN,
-        "refresh_status",
-        async_refresh_status_service,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "clear_tokens",
-        async_clear_tokens_service,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "reload",
-        handle_reload,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "poll_api",
-        poll_api_service,
-    )
+    if not hass.services.has_service(DOMAIN, "refresh_status"):
+        hass.services.async_register(
+            DOMAIN,
+            "refresh_status",
+            async_refresh_status_service,
+        )
+        hass.services.async_register(
+            DOMAIN,
+            "clear_tokens",
+            async_clear_tokens_service,
+        )
+        hass.services.async_register(
+            DOMAIN,
+            "reload",
+            handle_reload,
+        )
+        hass.services.async_register(
+            DOMAIN,
+            "poll_api",
+            poll_api_service,
+        )
 
     return True
 
@@ -191,7 +193,10 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+        entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
+        listener = entry_data.get(OPTIONS_LISTENER_KEY)
+        if listener is not None:
+            listener()
         return True
     return False
 

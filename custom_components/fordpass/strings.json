@@ -55,6 +55,7 @@
       "invalid_vin": "[%key:common::config_flow::error::invalid_vin%]",
       "invalid_mobile": "[%key:common::config_flow::error::invalid_mobile%]",
       "invalid_token": "[%key:common::config_flow::error::invalid_token%]",
+      "already_configured": "This vehicle is already configured",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "abort": {

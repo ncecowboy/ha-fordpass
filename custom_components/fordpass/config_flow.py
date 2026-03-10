@@ -89,7 +89,7 @@ async def validate_token(hass: core.HomeAssistant, data):
     """Validate a token obtained from the Ford login URL."""
     _LOGGER.debug("Validating token for user: %s", data.get("username"))
     token_store = Store(
-        hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{data['username']}"
+        hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{data['username']}_{data['region']}"
     )
     vehicle = Vehicle(data["username"], "", "", data["region"], token_store, hass)
     results = await vehicle.generate_tokens(
@@ -108,7 +108,7 @@ async def validate_token(hass: core.HomeAssistant, data):
 async def validate_existing_account(hass: core.HomeAssistant, username, region):
     """Validate existing account and get vehicles using stored token."""
     token_store = Store(
-        hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{username}"
+        hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{username}_{region}"
     )
     vehicle = Vehicle(username, "", "", region, token_store, hass)
 
@@ -124,7 +124,7 @@ async def validate_existing_account(hass: core.HomeAssistant, username, region):
 async def validate_vin(hass: core.HomeAssistant, data):
     """Validate that the given VIN is accessible."""
     token_store = Store(
-        hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{data[CONF_USERNAME]}"
+        hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{data[CONF_USERNAME]}_{data[REGION]}"
     )
     vehicle = Vehicle(data[CONF_USERNAME], data[CONF_PASSWORD], data[VIN], data[REGION], token_store, hass)
     test = await vehicle.status()
@@ -192,6 +192,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 self.region = user_input[REGION]
                 self.username = user_input[CONF_USERNAME]
+                # Prevent duplicate account+region entries
+                accounts = configured_accounts(self.hass)
+                if self.username in accounts:
+                    for entry in accounts[self.username]:
+                        if entry["region"] == self.region:
+                            return self.async_abort(reason="already_configured")
                 return await self.async_step_token(None)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -354,11 +360,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vehicle = None
 
             if vehicle:
-                self.login_input[VIN] = user_input["vin"]
-                return self.async_create_entry(
-                    title=f"Vehicle ({user_input[VIN]})",
-                    data=self.login_input,
-                )
+                # Prevent duplicate config entries for the same VIN
+                if user_input["vin"] in configured_vehicles(self.hass):
+                    errors["base"] = "already_configured"
+                else:
+                    self.login_input[VIN] = user_input["vin"]
+                    return self.async_create_entry(
+                        title=f"Vehicle ({user_input[VIN]})",
+                        data=self.login_input,
+                    )
 
         return self.async_show_form(
             step_id="vin", data_schema=VIN_SCHEME, errors=errors

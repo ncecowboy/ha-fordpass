@@ -10,6 +10,7 @@
             "invalid_vin": "VIN not found for given account",
             "invalid_mobile": "Mobile number as username must be specified if using South African Region",
             "invalid_token": "Token is invalid, please check you copied the correct token from the Header Location, it should start with fordapp://",
+            "already_configured": "This vehicle is already configured",
             "unknown": "Unexpected error"
         },
         "step": {
