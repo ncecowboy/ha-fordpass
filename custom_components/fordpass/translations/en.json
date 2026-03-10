@@ -39,11 +39,10 @@
                 }
             },
             "token": {
-                "title": "Setup Token",
-                "description": "Please visit the URL shown below in your browser, sign in to your Ford account, then copy the full redirect URL (starting with 'fordapp://userauthorized/?code=') and paste it into the Token field below. For help see the [documentation](https://github.com/ncecowboy/ha-fordpass).",
+                "title": "Sign In with Ford",
+                "description": "**[Click here to sign in with your Ford account]({login_url})**\n\nAfter signing in, your browser will attempt to open a `fordapp://` URL. If it shows an error or asks how to open the link, copy the full URL from the browser address bar (it starts with `fordapp://userauthorized/?code=`) and paste it into the field below.",
                 "data": {
-                    "url": "Login URL (copy to browser)",
-                    "tokenstr": "Token (paste full fordapp:// URL here)"
+                    "tokenstr": "Ford Redirect URL (starts with fordapp://)"
                 }
             },
             "vehicle": {

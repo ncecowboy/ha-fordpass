@@ -28,11 +28,10 @@
         }
       },
       "token": {
-        "title": "Setup Token",
-        "description": "Please enter the full token from the Location: header once logging in using the URL above. The token should look like 'fordapp://userauthorized/?code=eyJr...'",
+        "title": "Sign In with Ford",
+        "description": "**[Click here to sign in with your Ford account]({login_url})**\n\nAfter signing in, your browser will attempt to open a `fordapp://` URL. If it shows an error or asks how to open the link, copy the full URL from the browser address bar (it starts with `fordapp://userauthorized/?code=`) and paste it into the field below.",
         "data": {
-          "url": "Login URL",
-          "tokenstr": "Token"
+          "tokenstr": "Ford Redirect URL (starts with fordapp://)"
         }
       },
       "vehicle": {

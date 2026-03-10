@@ -8,7 +8,7 @@ from base64 import urlsafe_b64encode
 
 import voluptuous as vol
 from homeassistant import config_entries, core, exceptions
-from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.storage import Store
 
@@ -283,16 +283,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
 
         if self.region is not None:
+            login_url = self.generate_url(self.region)
             return self.async_show_form(
                 step_id="token",
                 data_schema=vol.Schema(
                     {
-                        vol.Optional(
-                            CONF_URL, default=self.generate_url(self.region)
-                        ): str,
                         vol.Required("tokenstr"): str,
                     }
                 ),
+                description_placeholders={"login_url": login_url},
                 errors=errors,
             )
 
