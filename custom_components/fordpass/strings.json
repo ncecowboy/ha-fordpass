@@ -29,9 +29,9 @@
       },
       "token": {
         "title": "Sign In with Ford",
-        "description": "**[Click here to sign in with your Ford account]({login_url})**\n\nAfter signing in, your browser will attempt to open a `fordapp://` URL. If it shows an error or asks how to open the link, copy the full URL from the browser address bar (it starts with `fordapp://userauthorized/?code=`) and paste it into the field below.",
+        "description": "**[Click here to sign in with your Ford account]({login_url})**\n\nAfter signing in, Home Assistant will automatically receive an authorization code from Ford and continue setup.\n\n**If the automatic redirect does not work** (e.g. if your browser shows a `fordapp://` URL that it cannot open), copy the full redirect URL (which contains your sign-in code) from the browser address bar and paste it into the field below.",
         "data": {
-          "tokenstr": "Ford Redirect URL (starts with fordapp://)"
+          "tokenstr": "Ford Redirect URL (optional fallback — starts with fordapp://)"
         }
       },
       "vehicle": {

@@ -8,6 +8,7 @@ import re
 import string
 import time
 from base64 import urlsafe_b64encode
+from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -72,9 +73,27 @@ class Vehicle:
         """Encode string to base64."""
         return urlsafe_b64encode(data).rstrip(b"=")
 
-    async def generate_tokens(self, urlstring, code_verifier):
-        """Generate tokens from auth code."""
-        code_new = urlstring.replace("fordapp://userauthorized/?code=", "")
+    async def generate_tokens(self, urlstring, code_verifier, redirect_uri=None):
+        """Generate tokens from auth code.
+
+        ``urlstring`` can be either the raw auth code or a redirect URL
+        (``fordapp://userauthorized/?code=<code>[&state=...]`` or an
+        ``https://`` HA callback URL).  Only the ``code`` query parameter is
+        extracted so that any additional parameters (e.g. ``state``) do not
+        corrupt the value sent to Ford's token endpoint.
+
+        ``redirect_uri`` should match the redirect_uri used in the
+        authorisation request (defaults to ``fordapp://userauthorized``).
+        """
+        # Extract just the 'code' query param if the input looks like a URL
+        if "code=" in urlstring:
+            parsed = urlparse(urlstring)
+            params = parse_qs(parsed.query)
+            extracted = params.get("code", [""])[0]
+            code_new = extracted if extracted else urlstring
+        else:
+            code_new = urlstring
+
         _LOGGER.debug("Code: %s, Country: %s", code_new, self.country_code)
 
         data = {
@@ -83,7 +102,7 @@ class Vehicle:
             "grant_type": "authorization_code",
             "code_verifier": code_verifier,
             "code": code_new,
-            "redirect_uri": "fordapp://userauthorized",
+            "redirect_uri": redirect_uri or "fordapp://userauthorized",
         }
 
         headers = {
