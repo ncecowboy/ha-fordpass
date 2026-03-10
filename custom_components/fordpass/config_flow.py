@@ -3,8 +3,10 @@ import hashlib
 import logging
 import random
 import re
+import secrets
 import string
 from base64 import urlsafe_b64encode
+from urllib.parse import urlencode
 
 import voluptuous as vol
 from homeassistant import config_entries, core, exceptions
@@ -87,7 +89,11 @@ def configured_accounts(hass):
 
 
 async def validate_token(hass: core.HomeAssistant, data):
-    """Validate a token obtained from the Ford login URL or OAuth callback."""
+    """Validate a token obtained from the Ford login URL or OAuth callback.
+
+    Raises ``InvalidToken`` if Ford rejects the authorization code.
+    Returns the vehicles dict on success (may be ``None`` if no vehicles).
+    """
     _LOGGER.debug("Validating token for user: %s", data.get("username"))
     token_store = Store(
         hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{data['username']}_{data['region']}"
@@ -99,12 +105,14 @@ async def validate_token(hass: core.HomeAssistant, data):
         redirect_uri=data.get("redirect_uri"),
     )
 
-    if results:
-        _LOGGER.debug("Token valid, fetching vehicles")
-        vehicles = await vehicle.vehicles()
-        _LOGGER.debug("Vehicles: %s", vehicles)
-        return vehicles
-    return None
+    if not results:
+        _LOGGER.debug("Token generation failed — invalid or expired authorization code")
+        raise InvalidToken
+
+    _LOGGER.debug("Token valid, fetching vehicles")
+    vehicles = await vehicle.vehicles()
+    _LOGGER.debug("Vehicles: %s", vehicles)
+    return vehicles
 
 
 async def validate_existing_account(hass: core.HomeAssistant, username, region):
@@ -289,13 +297,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     info = await validate_token(self.hass, token_data)
                     self.login_input.update(token_data)
-                    if info is None:
-                        self.vehicles = None
-                    else:
-                        self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
-                    if self.vehicles is None:
-                        return await self.async_step_vin()
-                    return await self.async_step_vehicle()
+                    return await self._handle_vehicles_from_token(info)
+                except InvalidToken:
+                    errors["base"] = "invalid_token"
                 except CannotConnect:
                     errors["base"] = "cannot_connect"
 
@@ -313,14 +317,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     try:
                         info = await validate_token(self.hass, user_input)
                         self.login_input = user_input
-                        if info is None:
-                            self.vehicles = None
-                            _LOGGER.debug("No vehicles found")
-                        else:
-                            self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
-                        if self.vehicles is None:
-                            return await self.async_step_vin()
-                        return await self.async_step_vehicle()
+                        return await self._handle_vehicles_from_token(info)
+                    except InvalidToken:
+                        errors["base"] = "invalid_token"
                     except CannotConnect:
                         errors["base"] = "cannot_connect"
                 else:
@@ -339,6 +338,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
+    async def _handle_vehicles_from_token(self, info):
+        """Advance to vehicle selection or VIN entry based on available vehicles."""
+        self.vehicles = info.get("userVehicles", {}).get("vehicleDetails") if info else None
+        if self.vehicles is None:
+            _LOGGER.debug("No vehicles found on account")
+            return await self.async_step_vin()
+        return await self.async_step_vehicle()
+
     def check_token(self, token):
         """Check that the token contains the expected prefix."""
         return "fordapp://userauthorized/?code=" in token
@@ -348,8 +355,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         When HA's base URL is available the redirect_uri is set to
         ``/api/fordpass/callback`` on the HA instance so that the OAuth code
-        is delivered automatically.  The flow ID is embedded in the ``state``
-        parameter so the callback view can advance the correct config flow.
+        is delivered automatically.  A random nonce is used as the ``state``
+        parameter (mapped to this flow's ID) to prevent cross-flow forgery.
 
         If the HA base URL cannot be determined, the original
         ``fordapp://userauthorized`` redirect URI is used and the user must
@@ -386,24 +393,35 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             self.login_input["redirect_uri"] = "fordapp://userauthorized"
 
+        # Generate a cryptographically random nonce and map it to the flow ID.
+        # The nonce is used as 'state' so the flow ID is never exposed to the browser.
+        nonce = secrets.token_urlsafe(32)
+        self.hass.data.setdefault(DOMAIN, {}).setdefault("oauth_nonces", {})[nonce] = self.flow_id
+        self.login_input["oauth_nonce"] = nonce
+
         region_data = REGIONS[region]
-        # redirect_uri is always set above; use it directly
         effective_redirect_uri = self.login_input["redirect_uri"]
+
+        # Build the query string with proper URL encoding so that the
+        # redirect_uri value is correctly percent-encoded.
+        query_params = {
+            "redirect_uri": effective_redirect_uri,
+            "response_type": "code",
+            "max_age": "3600",
+            "code_challenge": code_verifier,
+            "code_challenge_method": "S256",
+            "scope": "09852200-05fd-41f6-8c21-d36d3497dc64 openid",
+            "client_id": "09852200-05fd-41f6-8c21-d36d3497dc64",
+            "ui_locales": region_data["locale"],
+            "language_code": region_data["locale"],
+            "country_code": region_data["locale_short"],
+            "ford_application_id": region_data["region"],
+            "state": nonce,
+        }
         url = (
             f"{region_data['locale_url']}/4566605f-43a7-400a-946e-89cc9fdb0bd7"
             f"/B2C_1A_SignInSignUp_{region_data['locale']}/oauth2/v2.0/authorize"
-            f"?redirect_uri={effective_redirect_uri}"
-            f"&response_type=code"
-            f"&max_age=3600"
-            f"&code_challenge={code_verifier}"
-            f"&code_challenge_method=S256"
-            f"&scope=%2009852200-05fd-41f6-8c21-d36d3497dc64%20openid"
-            f"&client_id=09852200-05fd-41f6-8c21-d36d3497dc64"
-            f"&ui_locales={region_data['locale']}"
-            f"&language_code={region_data['locale']}"
-            f"&country_code={region_data['locale_short']}"
-            f"&ford_application_id={region_data['region']}"
-            f"&state={self.flow_id}"
+            f"?{urlencode(query_params)}"
         )
         return url
 

@@ -5,6 +5,8 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.data_entry_flow import UnknownFlow
 
+from .const import DOMAIN
+
 _LOGGER = logging.getLogger(__name__)
 
 SUCCESS_HTML = """
@@ -84,21 +86,38 @@ class FordPassCallbackView(HomeAssistantView):
         hass = request.app["hass"]
 
         code = request.query.get("code")
-        state = request.query.get("state")  # Contains the config flow ID
+        nonce = request.query.get("state")  # Random nonce; maps to the flow ID server-side
 
-        _LOGGER.debug("FordPass OAuth callback received, state=%s, code_present=%s", state, bool(code))
+        _LOGGER.debug("FordPass OAuth callback received, nonce_present=%s, code_present=%s", bool(nonce), bool(code))
 
-        if not code or not state:
+        if not code or not nonce:
             _LOGGER.warning("FordPass callback missing code or state parameter")
             return web.Response(text=ERROR_HTML, content_type="text/html", status=400)
 
+        # Resolve the nonce to the actual config flow ID and consume it (one-time use).
+        nonce_map = hass.data.get(DOMAIN, {}).get("oauth_nonces", {})
+        flow_id = nonce_map.pop(nonce, None)
+
+        if flow_id is None:
+            _LOGGER.warning("FordPass callback received unknown or already-used nonce")
+            return web.Response(text=ERROR_HTML, content_type="text/html", status=400)
+
         try:
-            # Advance the config flow with the received code
+            # Verify the flow exists and belongs to the FordPass integration
+            # before advancing it with the received code.
+            # async_get() raises UnknownFlow when the flow doesn't exist.
+            flow = hass.config_entries.flow.async_get(flow_id)
+            if not flow or flow.get("handler") != DOMAIN:
+                _LOGGER.warning(
+                    "FordPass callback: flow %s does not belong to %s", flow_id, DOMAIN
+                )
+                return web.Response(text=ERROR_HTML, content_type="text/html", status=400)
+
             await hass.config_entries.flow.async_configure(
-                state, user_input={"code": code}
+                flow_id, user_input={"code": code}
             )
-            _LOGGER.debug("Successfully advanced FordPass config flow %s", state)
+            _LOGGER.debug("Successfully advanced FordPass config flow %s", flow_id)
             return web.Response(text=SUCCESS_HTML, content_type="text/html")
         except UnknownFlow:
-            _LOGGER.error("FordPass config flow %s not found; it may have expired", state)
+            _LOGGER.error("FordPass config flow %s not found; it may have expired", flow_id)
             return web.Response(text=ERROR_HTML, content_type="text/html", status=400)
