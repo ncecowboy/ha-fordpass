@@ -73,28 +73,21 @@ class Vehicle:
         """Encode string to base64."""
         return urlsafe_b64encode(data).rstrip(b"=")
 
-    async def generate_tokens(self, urlstring, code_verifier, redirect_uri=None):
-        """Generate tokens from auth code.
-
-        ``urlstring`` can be either the raw auth code or a redirect URL
-        (``fordapp://userauthorized/?code=<code>[&state=...]`` or an
-        ``https://`` HA callback URL).  Only the ``code`` query parameter is
-        extracted so that any additional parameters (e.g. ``state``) do not
-        corrupt the value sent to Ford's token endpoint.
-
-        ``redirect_uri`` should match the redirect_uri used in the
-        authorisation request (defaults to ``fordapp://userauthorized``).
-        """
-        # Extract just the 'code' query param if the input looks like a URL
+    async def generate_tokens(self, urlstring, code_verifier):
+        """Generate tokens from auth code."""
+        # Extract just the 'code' query param if the input looks like a URL,
+        # so that any additional parameters (e.g. '&state=...') are not sent.
         if "code=" in urlstring:
             parsed = urlparse(urlstring)
             params = parse_qs(parsed.query)
-            extracted = params.get("code", [""])[0]
-            code_new = extracted if extracted else urlstring
+            code_new = params.get("code", [""])[0]
         else:
             code_new = urlstring
-
-        _LOGGER.debug("Code: %s, Country: %s", code_new, self.country_code)
+        _LOGGER.debug(
+            "Received auth code for country %s (length=%d)",
+            self.country_code,
+            len(code_new),
+        )
 
         data = {
             "client_id": "09852200-05fd-41f6-8c21-d36d3497dc64",
@@ -102,7 +95,7 @@ class Vehicle:
             "grant_type": "authorization_code",
             "code_verifier": code_verifier,
             "code": code_new,
-            "redirect_uri": redirect_uri or "fordapp://userauthorized",
+            "redirect_uri": "fordapp://userauthorized",
         }
 
         headers = {
