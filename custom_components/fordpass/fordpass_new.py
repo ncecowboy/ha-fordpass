@@ -72,9 +72,20 @@ class Vehicle:
         """Encode string to base64."""
         return urlsafe_b64encode(data).rstrip(b"=")
 
-    async def generate_tokens(self, urlstring, code_verifier):
-        """Generate tokens from auth code."""
-        code_new = urlstring.replace("fordapp://userauthorized/?code=", "")
+    async def generate_tokens(self, urlstring, code_verifier, redirect_uri=None):
+        """Generate tokens from auth code.
+
+        ``urlstring`` can be either the raw auth code or the full
+        ``fordapp://userauthorized/?code=<code>`` redirect URL.
+        ``redirect_uri`` should match the redirect_uri used in the
+        authorisation request (defaults to ``fordapp://userauthorized``).
+        """
+        # Support both the raw code and the full fordapp:// redirect URL
+        if urlstring.startswith("fordapp://userauthorized/?code="):
+            code_new = urlstring.replace("fordapp://userauthorized/?code=", "")
+        else:
+            code_new = urlstring
+
         _LOGGER.debug("Code: %s, Country: %s", code_new, self.country_code)
 
         data = {
@@ -83,7 +94,7 @@ class Vehicle:
             "grant_type": "authorization_code",
             "code_verifier": code_verifier,
             "code": code_new,
-            "redirect_uri": "fordapp://userauthorized",
+            "redirect_uri": redirect_uri or "fordapp://userauthorized",
         }
 
         headers = {

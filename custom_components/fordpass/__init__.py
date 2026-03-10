@@ -32,6 +32,7 @@ from .const import (
     VEHICLE,
     VIN,
 )
+from .callback_view import FordPassCallbackView
 from .fordpass_new import Vehicle
 
 CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Schema({})}, extra=vol.ALLOW_EXTRA)
@@ -45,6 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the FordPass component."""
     hass.data.setdefault(DOMAIN, {})
+    hass.http.register_view(FordPassCallbackView)
     return True
 
 

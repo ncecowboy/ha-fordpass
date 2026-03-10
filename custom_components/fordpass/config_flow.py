@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant import config_entries, core, exceptions
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
 
 from .const import (  # pylint:disable=unused-import
@@ -86,7 +87,7 @@ def configured_accounts(hass):
 
 
 async def validate_token(hass: core.HomeAssistant, data):
-    """Validate a token obtained from the Ford login URL."""
+    """Validate a token obtained from the Ford login URL or OAuth callback."""
     _LOGGER.debug("Validating token for user: %s", data.get("username"))
     token_store = Store(
         hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{data['username']}_{data['region']}"
@@ -95,6 +96,7 @@ async def validate_token(hass: core.HomeAssistant, data):
     results = await vehicle.generate_tokens(
         data["tokenstr"],
         data["code_verifier"],
+        redirect_uri=data.get("redirect_uri"),
     )
 
     if results:
@@ -260,33 +262,69 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_token(self, user_input=None):
-        """Handle token entry step."""
+        """Handle token entry step.
+
+        Supports two modes:
+        - Automatic: The FordPassCallbackView receives the OAuth code via
+          ``/api/fordpass/callback`` and advances this flow by calling
+          ``hass.config_entries.flow.async_configure`` with ``{"code": code}``.
+        - Manual fallback: The user copies the full ``fordapp://`` redirect URL
+          from the browser address bar and pastes it into the ``tokenstr`` field.
+        """
         errors = {}
 
         if user_input is not None:
-            try:
+            # Automatic path: OAuth code delivered by the HTTP callback view
+            if "code" in user_input:
+                code = user_input["code"]
+                redirect_uri = self.login_input.get("redirect_uri")
+                token_data = {
+                    "tokenstr": code,
+                    "region": self.region,
+                    "username": self.username,
+                    "password": "",
+                    "code_verifier": self.login_input.get("code_verifier", ""),
+                    "redirect_uri": redirect_uri,
+                }
+                try:
+                    info = await validate_token(self.hass, token_data)
+                    self.login_input.update(token_data)
+                    if info is None:
+                        self.vehicles = None
+                    else:
+                        self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
+                    if self.vehicles is None:
+                        return await self.async_step_vin()
+                    return await self.async_step_vehicle()
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+
+            # Manual fallback path: user pasted the full fordapp:// URL
+            elif "tokenstr" in user_input and user_input.get("tokenstr"):
                 token = user_input["tokenstr"]
                 if self.check_token(token):
                     user_input["region"] = self.region
                     user_input["username"] = self.username
                     user_input["password"] = ""
                     user_input["code_verifier"] = self.login_input.get("code_verifier", "")
+                    # Manual paste always uses the fordapp:// redirect URI
+                    user_input["redirect_uri"] = "fordapp://userauthorized"
                     _LOGGER.debug("Token input: %s", user_input)
-                    info = await validate_token(self.hass, user_input)
-                    self.login_input = user_input
-                    if info is None:
-                        self.vehicles = None
-                        _LOGGER.debug("No vehicles found")
-                    else:
-                        self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
-                    if self.vehicles is None:
-                        return await self.async_step_vin()
-                    return await self.async_step_vehicle()
+                    try:
+                        info = await validate_token(self.hass, user_input)
+                        self.login_input = user_input
+                        if info is None:
+                            self.vehicles = None
+                            _LOGGER.debug("No vehicles found")
+                        else:
+                            self.vehicles = info.get("userVehicles", {}).get("vehicleDetails")
+                        if self.vehicles is None:
+                            return await self.async_step_vin()
+                        return await self.async_step_vehicle()
+                    except CannotConnect:
+                        errors["base"] = "cannot_connect"
                 else:
                     errors["base"] = "invalid_token"
-
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
 
         if self.region is not None:
             login_url = self.generate_url(self.region)
@@ -294,7 +332,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="token",
                 data_schema=vol.Schema(
                     {
-                        vol.Required("tokenstr"): str,
+                        vol.Optional("tokenstr"): str,
                     }
                 ),
                 description_placeholders={"login_url": login_url},
@@ -306,7 +344,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return "fordapp://userauthorized/?code=" in token
 
     def generate_url(self, region):
-        """Generate the Ford login URL for token retrieval."""
+        """Generate the Ford login URL for token retrieval.
+
+        When HA's base URL is available the redirect_uri is set to
+        ``/api/fordpass/callback`` on the HA instance so that the OAuth code
+        is delivered automatically.  The flow ID is embedded in the ``state``
+        parameter so the callback view can advance the correct config flow.
+
+        If the HA base URL cannot be determined, the original
+        ``fordapp://userauthorized`` redirect URI is used and the user must
+        paste the full redirect URL manually.
+        """
         _LOGGER.debug("Generating URL for region: %s", region)
         code1 = "".join(
             random.choice(string.ascii_letters + string.digits + "-._~")
@@ -315,11 +363,36 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         code_verifier = self.generate_hash(code1)
         self.login_input["code_verifier"] = code1
 
+        # Attempt to build an automatic HA callback redirect URI.
+        # Prefer an external URL so authentication works from outside the local
+        # network; fall back to the internal URL when no external URL is configured.
+        redirect_uri = None
+        try:
+            ha_url = get_url(self.hass, allow_internal=False, prefer_external=True)
+            redirect_uri = f"{ha_url}/api/fordpass/callback"
+        except NoURLAvailableError:
+            try:
+                ha_url = get_url(self.hass, allow_internal=True, prefer_internal=True)
+                redirect_uri = f"{ha_url}/api/fordpass/callback"
+            except NoURLAvailableError:
+                pass
+
+        if redirect_uri:
+            self.login_input["redirect_uri"] = redirect_uri
+            _LOGGER.debug("Using HA callback redirect URI: %s", redirect_uri)
+        else:
+            _LOGGER.debug(
+                "HA base URL not available; falling back to manual fordapp:// redirect"
+            )
+            self.login_input["redirect_uri"] = "fordapp://userauthorized"
+
         region_data = REGIONS[region]
+        # redirect_uri is always set above; use it directly
+        effective_redirect_uri = self.login_input["redirect_uri"]
         url = (
             f"{region_data['locale_url']}/4566605f-43a7-400a-946e-89cc9fdb0bd7"
             f"/B2C_1A_SignInSignUp_{region_data['locale']}/oauth2/v2.0/authorize"
-            f"?redirect_uri=fordapp://userauthorized"
+            f"?redirect_uri={effective_redirect_uri}"
             f"&response_type=code"
             f"&max_age=3600"
             f"&code_challenge={code_verifier}"
@@ -330,6 +403,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             f"&language_code={region_data['locale']}"
             f"&country_code={region_data['locale_short']}"
             f"&ford_application_id={region_data['region']}"
+            f"&state={self.flow_id}"
         )
         return url
 
